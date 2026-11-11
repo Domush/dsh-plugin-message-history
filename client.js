@@ -10,6 +10,8 @@ window.__ModuleLoader__.load({
       NAVIGATING: "NAVIGATING"
     };
 
+    const DOUBLE_PRESS_TIMEOUT_MS = 1500;
+
     function getHistoryItemText(item) {
       if (!item) return "";
       return typeof item === "string" ? item : (item.text || "");
@@ -21,6 +23,48 @@ window.__ModuleLoader__.load({
         return el.value || "";
       }
       return (el.innerText || el.textContent || "").replace(/\r?\n$/, "");
+    }
+
+    function isCaretAtStart(el) {
+      if (!el) return true;
+      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        return el.selectionStart === 0 && (el.selectionEnd === 0 || el.selectionEnd == null);
+      }
+      try {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+        const range = sel.getRangeAt(0);
+        if (el.contains && !el.contains(range.startContainer)) return false;
+
+        const preRange = document.createRange();
+        preRange.selectNodeContents(el);
+        preRange.setEnd(range.startContainer, range.startOffset);
+        return preRange.toString().length === 0;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function isCaretAtEnd(el) {
+      if (!el) return true;
+      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        const val = el.value || "";
+        return el.selectionEnd === val.length && (el.selectionStart === val.length || el.selectionStart == null);
+      }
+      try {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+        const range = sel.getRangeAt(0);
+        if (el.contains && !el.contains(range.endContainer)) return false;
+
+        const postRange = document.createRange();
+        postRange.selectNodeContents(el);
+        postRange.setStart(range.endContainer, range.endOffset);
+        const textAfter = postRange.toString().replace(/\r?\n$/, "");
+        return textAfter.length === 0;
+      } catch (err) {
+        return false;
+      }
     }
 
     function getComposerElement(target) {
@@ -64,13 +108,11 @@ window.__ModuleLoader__.load({
         document.execCommand("selectAll", false, null);
         document.execCommand("insertText", false, text);
       } catch (err) {
-        // Fallback to textContent if execCommand is not available
         el.textContent = text;
         el.dispatchEvent(new Event("input", { bubbles: true }));
       }
     }
 
-    // Shared reference to the active session props
     let activeSessionProps = null;
 
     function MessageHistoryMount(props) {
@@ -81,7 +123,11 @@ window.__ModuleLoader__.load({
         state: STATE.IDLE,
         historyIndex: -1,
         draft: "",
-        history: []
+        history: [],
+        upPressCount: 0,
+        lastUpPressTime: 0,
+        downPressCount: 0,
+        lastDownPressTime: 0
       });
 
       useEffect(() => {
@@ -120,6 +166,8 @@ window.__ModuleLoader__.load({
           const currentProps = activeSessionProps || props;
 
           if (key === "Escape") {
+            st.upPressCount = 0;
+            st.downPressCount = 0;
             if (st.state === STATE.NAVIGATING) {
               e.preventDefault();
               e.stopPropagation();
@@ -133,44 +181,101 @@ window.__ModuleLoader__.load({
           }
 
           if (key === "ArrowUp") {
+            st.downPressCount = 0;
             const currentText = getElementText(composerEl);
 
-            if (st.state === STATE.IDLE) {
-              // Trigger when the message box is empty, OR if we are on the first line / start
-              // Allowing trigger even if text exists to match expected behavior
+            // Empty message box: immediate trigger on single press
+            if (!currentText.trim()) {
               e.preventDefault();
               e.stopPropagation();
+              st.upPressCount = 0;
               st.state = STATE.NAVIGATING;
               st.draft = currentText;
               st.historyIndex = 0;
               setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
-            } else if (st.state === STATE.NAVIGATING) {
+              return;
+            }
+
+            // Text is present: MUST be at position 0
+            if (!isCaretAtStart(composerEl)) {
+              st.upPressCount = 0;
+              // Allow default browser/Lexical behavior (scroll up or jump to position 0)
+              return;
+            }
+
+            // Cursor is at position 0: require double-press within threshold
+            const now = Date.now();
+            if (st.upPressCount >= 1 && (now - st.lastUpPressTime) < DOUBLE_PRESS_TIMEOUT_MS) {
+              st.upPressCount = 0;
               e.preventDefault();
               e.stopPropagation();
-              if (st.historyIndex < hist.length - 1) {
-                st.historyIndex++;
-                setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
+
+              if (st.state === STATE.IDLE) {
+                st.state = STATE.NAVIGATING;
+                st.draft = currentText;
+                st.historyIndex = 0;
+                setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
+              } else if (st.state === STATE.NAVIGATING) {
+                if (st.historyIndex < hist.length - 1) {
+                  st.historyIndex++;
+                  setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
+                }
               }
+            } else {
+              // First press at position 0
+              st.upPressCount = 1;
+              st.lastUpPressTime = now;
+              // Do NOT preventDefault, let default action occur
+              return;
             }
             return;
           }
 
           if (key === "ArrowDown") {
+            st.upPressCount = 0;
+
             if (st.state === STATE.NAVIGATING) {
-              e.preventDefault();
-              e.stopPropagation();
-              if (st.historyIndex > 0) {
-                st.historyIndex--;
-                setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
-              } else if (st.historyIndex === 0) {
-                st.state = STATE.IDLE;
-                st.historyIndex = -1;
-                const restored = st.draft;
-                st.draft = "";
-                setComposerText(currentProps, composerEl, restored);
+              // Must be at the very last position
+              if (!isCaretAtEnd(composerEl)) {
+                st.downPressCount = 0;
+                // Allow default browser/Lexical behavior (scroll down towards end)
+                return;
               }
+
+              // Cursor is at very last position: require double-press
+              const now = Date.now();
+              if (st.downPressCount >= 1 && (now - st.lastDownPressTime) < DOUBLE_PRESS_TIMEOUT_MS) {
+                st.downPressCount = 0;
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (st.historyIndex > 0) {
+                  st.historyIndex--;
+                  setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
+                } else if (st.historyIndex === 0) {
+                  // Reached the draft
+                  st.state = STATE.IDLE;
+                  st.historyIndex = -1;
+                  const restored = st.draft;
+                  st.draft = "";
+                  setComposerText(currentProps, composerEl, restored);
+                }
+              } else {
+                // First press at very last position
+                st.downPressCount = 1;
+                st.lastDownPressTime = now;
+                return;
+              }
+            } else {
+              st.downPressCount = 0;
             }
             return;
+          }
+
+          // Reset double-press counters on any other key
+          if (key !== "ArrowUp" && key !== "ArrowDown") {
+            st.upPressCount = 0;
+            st.downPressCount = 0;
           }
 
           // User typing or modifying text cancels navigation mode
