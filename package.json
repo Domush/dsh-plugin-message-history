@@ -1,0 +1,43 @@
+{
+  "name": "dsh-plugin-message-history",
+  "version": "1.0.0",
+  "description": "Native DSH plugin for persistent message history navigation via arrow keys",
+  "type": "module",
+  "license": "MIT",
+  "author": "Domush",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Domush/dsh-plugin-message-history.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "message-history"
+  ],
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
