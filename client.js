@@ -136,15 +136,14 @@ window.__ModuleLoader__.load({
             const currentText = getElementText(composerEl);
 
             if (st.state === STATE.IDLE) {
-              // Trigger when the message box is empty
-              if (!currentText.trim()) {
-                e.preventDefault();
-                e.stopPropagation();
-                st.state = STATE.NAVIGATING;
-                st.draft = currentText;
-                st.historyIndex = 0;
-                setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
-              }
+              // Trigger when the message box is empty, OR if we are on the first line / start
+              // Allowing trigger even if text exists to match expected behavior
+              e.preventDefault();
+              e.stopPropagation();
+              st.state = STATE.NAVIGATING;
+              st.draft = currentText;
+              st.historyIndex = 0;
+              setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
             } else if (st.state === STATE.NAVIGATING) {
               e.preventDefault();
               e.stopPropagation();
