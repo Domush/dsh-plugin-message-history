@@ -1,94 +1,138 @@
-import { HistoryNavigator } from './lib/navigator.js';
+window.__ModuleLoader__.load({
+  id: "dsh-plugin-message-history",
+  factory(require) {
+    const React = require("react");
+    const h = React.createElement;
+    const { useState, useEffect, useRef } = React;
 
-function setNativeValue(element, value) {
-  const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set;
-  const prototype = Object.getPrototypeOf(element);
-  const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    class HistoryNavigator {
+      constructor(getHistory) {
+        this.getHistory = getHistory;
+        this.index = -1;
+        this.isNavigating = false;
+        this.originalDraft = '';
+      }
 
-  if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
-    prototypeValueSetter.call(element, value);
-  } else if (valueSetter) {
-    valueSetter.call(element, value);
-  } else {
-    element.value = value;
+      handleKeyDown(e, target) {
+        const history = this.getHistory();
+        if (!this.isNavigating && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          if (target.value.trim() === '') {
+            this.isNavigating = true;
+            this.originalDraft = target.value;
+            this.index = 0;
+            if (history.length > 0) {
+              e.preventDefault();
+              return { action: 'set_text', text: history[this.index].text };
+            }
+          }
+        } else if (this.isNavigating) {
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this.index = Math.min(this.index + 1, history.length - 1);
+            return { action: 'set_text', text: history[this.index].text };
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this.index = Math.max(this.index - 1, -1);
+            if (this.index === -1) {
+              this.isNavigating = false;
+              return { action: 'set_text', text: this.originalDraft };
+            }
+            return { action: 'set_text', text: history[this.index].text };
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.isNavigating = false;
+            return { action: 'set_text', text: this.originalDraft };
+          }
+        }
+        return null;
+      }
+    }
+
+    function setNativeValue(element, value) {
+      const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set;
+      const prototype = Object.getPrototypeOf(element);
+      const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+      if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+        prototypeValueSetter.call(element, value);
+      } else if (valueSetter) {
+        valueSetter.call(element, value);
+      } else {
+        element.value = value;
+      }
+    }
+
+    // React Component rendered in the composer UI
+    function MessageHistoryMount() {
+      const [history, setHistory] = useState([]);
+      const navigatorRef = useRef(null);
+
+      useEffect(() => {
+        let active = true;
+        const apiEndpoint = '/api/message-history-v2';
+
+        async function fetchHistory() {
+          try {
+            let res = await fetch(apiEndpoint);
+            if (!res.ok) {
+              res = await fetch('/api/message-history');
+            }
+            if (res.ok && active) {
+              const data = await res.json();
+              setHistory(data.history || []);
+            }
+          } catch (e) {
+            // Ignore fetch failure
+          }
+        }
+
+        fetchHistory();
+        return () => { active = false; };
+      }, []);
+
+      useEffect(() => {
+        navigatorRef.current = new HistoryNavigator(() => history);
+      }, [history]);
+
+      useEffect(() => {
+        function onKeyDown(e) {
+          const target = e.target;
+          if (!target || target.tagName !== 'TEXTAREA') return;
+
+          if (navigatorRef.current) {
+            const result = navigatorRef.current.handleKeyDown(e, target);
+            if (result && result.action === 'set_text') {
+              setNativeValue(target, result.text);
+              target.dispatchEvent(new Event('input', { bubbles: true }));
+              target.selectionStart = target.selectionEnd = target.value.length;
+            }
+          }
+        }
+
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => {
+          window.removeEventListener('keydown', onKeyDown, true);
+        };
+      }, []);
+
+      return null; // Headless component
+    }
+
+    return {
+      inject: ["slots"],
+      apply(ctx) {
+        // Inject into the composer to guarantee lifecycle instantiation
+        ctx.slots.inject("conversation.input.left", () =>
+          ctx.slots.register(
+            {
+              name: "conversation.input.left",
+              id: "message-history-mount",
+              order: 99
+            },
+            MessageHistoryMount
+          )
+        );
+      }
+    };
   }
-}
-
-export default function apply(ctx) {
-  let cachedHistory = [];
-  let currentSessionId = 'global';
-
-  function detectSessionId() {
-    try {
-      const match = window.location.pathname.match(/\/session\/([^\/]+)/) ||
-                    window.location.hash.match(/session\/([^\/]+)/);
-      if (match && match[1]) {
-        currentSessionId = match[1];
-      }
-    } catch (e) {}
-  }
-
-  let apiEndpoint = '/api/message-history-v2';
-
-  // Function to sync history from host
-  async function refreshHistory() {
-    detectSessionId();
-    try {
-      let res = await fetch(`${apiEndpoint}?sessionId=${encodeURIComponent(currentSessionId)}`);
-      if (!res.ok && apiEndpoint === '/api/message-history-v2') {
-        apiEndpoint = '/api/message-history';
-        res = await fetch(`${apiEndpoint}?sessionId=${encodeURIComponent(currentSessionId)}`);
-      }
-      if (res.ok) {
-        const data = await res.json();
-        cachedHistory = data.history || [];
-      }
-    } catch (e) {
-      // Ignore
-    }
-  }
-
-  const navigator = new HistoryNavigator(() => cachedHistory);
-
-  // Sync history when entering textarea
-  window.addEventListener('focusin', (e) => {
-    if (e.target && e.target.tagName === 'TEXTAREA') {
-      refreshHistory();
-    }
-  }, true);
-
-  // Intercept keyboard events globally on textareas
-  window.addEventListener('keydown', (e) => {
-    const target = e.target;
-    if (!target || target.tagName !== 'TEXTAREA') {
-      return;
-    }
-
-    const result = navigator.handleKeyDown(e, target);
-    if (result && result.action === 'set_text') {
-      setNativeValue(target, result.text);
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.selectionStart = target.selectionEnd = target.value.length;
-    }
-  }, true);
-
-  // Monitor form/message submits to record history immediately
-  window.addEventListener('keydown', (e) => {
-    const target = e.target;
-    if (!target || target.tagName !== 'TEXTAREA') return;
-
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const text = target.value;
-      if (text && text.trim()) {
-        detectSessionId();
-        fetch(apiEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, sessionId: currentSessionId })
-        }).then(() => refreshHistory()).catch(() => {});
-      }
-    }
-  }, true);
-
-  refreshHistory();
-}
+});

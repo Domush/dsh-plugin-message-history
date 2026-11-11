@@ -1,0 +1,10 @@
+{
+  "en": {
+    "title": "Message History",
+    "description": "Native persistent message history navigation via arrow keys."
+  },
+  "zh": {
+    "title": "消息历史",
+    "description": "通过箭头键进行本地持久化消息历史导航。"
+  }
+}
