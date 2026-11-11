@@ -1,5 +1,6 @@
 window.__ModuleLoader__.load({
   id: "dsh-plugin-message-history",
+    debug: console.log("Plugin client loading..."),
   factory(require) {
     const React = require("react");
     const h = React.createElement;
