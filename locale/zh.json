@@ -1,4 +1,6 @@
 {
-  "title": "消息历史",
-  "description": "通过箭头键进行本地持久化消息历史导航。"
+  "meta": {
+    "title": "消息历史 (Message History)",
+    "description": "原生集成消息历史记录，支持在空白输入框中使用上下方向键浏览历史 Prompt。"
+  }
 }
