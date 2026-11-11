@@ -1,6 +1,7 @@
 {
   "meta": {
-    "title": "Message History",
-    "description": "Native persistent message history navigation via arrow keys in empty prompt input."
-  }
+    "language": "en"
+  },
+  "title": "Message History",
+  "description": "Native persistent message history navigation via arrow keys."
 }
