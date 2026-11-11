@@ -15,6 +15,11 @@ window.__ModuleLoader__.load({
       return typeof item === "string" ? item : (item.text || "");
     }
 
+    function normalizeText(str) {
+      if (!str) return "";
+      return str.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n+/g, "\n").trim();
+    }
+
     function getElementText(el) {
       if (!el) return "";
       if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
@@ -121,7 +126,8 @@ window.__ModuleLoader__.load({
         state: STATE.IDLE,
         historyIndex: -1,
         draft: "",
-        history: []
+        history: [],
+        isModified: false
       });
 
       useEffect(() => {
@@ -148,6 +154,15 @@ window.__ModuleLoader__.load({
       }, [props.sessionId]);
 
       useEffect(() => {
+        function onInput(e) {
+          const composerEl = getComposerElement(e.target);
+          if (!composerEl) return;
+          const st = stateRef.current;
+          if (st.state === STATE.NAVIGATING) {
+            st.isModified = true;
+          }
+        }
+
         function onKeyDown(e) {
           const composerEl = getComposerElement(e.target);
           if (!composerEl) return;
@@ -167,6 +182,7 @@ window.__ModuleLoader__.load({
               const restored = st.draft;
               st.draft = "";
               st.historyIndex = -1;
+              st.isModified = false;
               setComposerText(currentProps, composerEl, restored);
             }
             return;
@@ -183,6 +199,7 @@ window.__ModuleLoader__.load({
                 st.state = STATE.NAVIGATING;
                 st.draft = currentText;
                 st.historyIndex = 0;
+                st.isModified = false;
                 setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
                 return;
               }
@@ -194,6 +211,7 @@ window.__ModuleLoader__.load({
                 st.state = STATE.NAVIGATING;
                 st.draft = currentText;
                 st.historyIndex = 0;
+                st.isModified = false;
                 setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
                 return;
               }
@@ -204,7 +222,7 @@ window.__ModuleLoader__.load({
 
             if (st.state === STATE.NAVIGATING) {
               const expectedText = getHistoryItemText(hist[st.historyIndex]);
-              const isUnmodified = (currentText === expectedText);
+              const isUnmodified = !st.isModified || (normalizeText(currentText) === normalizeText(expectedText));
 
               // If unmodified, single press immediately changes to older history item
               // If modified, only navigate when cursor is at position 0
@@ -213,6 +231,7 @@ window.__ModuleLoader__.load({
                   e.preventDefault();
                   e.stopPropagation();
                   st.historyIndex++;
+                  st.isModified = false;
                   setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
                 } else {
                   // Reached oldest history item
@@ -231,7 +250,7 @@ window.__ModuleLoader__.load({
             if (st.state === STATE.NAVIGATING) {
               const currentText = getElementText(composerEl);
               const expectedText = getHistoryItemText(hist[st.historyIndex]);
-              const isUnmodified = (currentText === expectedText);
+              const isUnmodified = !st.isModified || (normalizeText(currentText) === normalizeText(expectedText));
 
               // If unmodified, single press immediately changes to newer history item or draft
               // If modified, only navigate when cursor is at very last position
@@ -241,11 +260,13 @@ window.__ModuleLoader__.load({
 
                 if (st.historyIndex > 0) {
                   st.historyIndex--;
+                  st.isModified = false;
                   setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
                 } else if (st.historyIndex === 0) {
                   // Reached the draft
                   st.state = STATE.IDLE;
                   st.historyIndex = -1;
+                  st.isModified = false;
                   const restored = st.draft;
                   st.draft = "";
                   setComposerText(currentProps, composerEl, restored);
@@ -257,10 +278,19 @@ window.__ModuleLoader__.load({
               return;
             }
           }
+
+          // Detect user editing in NAVIGATING mode
+          if (st.state === STATE.NAVIGATING) {
+            if (key === "Backspace" || key === "Delete" || key === "Enter" || (key.length === 1 && !e.ctrlKey && !e.metaKey)) {
+              st.isModified = true;
+            }
+          }
         }
 
+        window.addEventListener("input", onInput, true);
         window.addEventListener("keydown", onKeyDown, true);
         return () => {
+          window.removeEventListener("input", onInput, true);
           window.removeEventListener("keydown", onKeyDown, true);
         };
       }, [props]);
