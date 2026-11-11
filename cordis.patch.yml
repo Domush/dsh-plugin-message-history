@@ -1,4 +1,3 @@
-# Cordis patch for dsh-plugin-message-history
 - insert:
-    id: dsh-plugin-message-history
-    name: dsh-plugin-message-history
+    - id: dsh-plugin-message-history
+      name: dsh-plugin-message-history

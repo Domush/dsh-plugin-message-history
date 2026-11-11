@@ -2,6 +2,13 @@
 
 All notable changes to `dsh-plugin-message-history` will be documented in this file.
 
+## [1.0.2] - 2026-11-10
+
+### Fixed
+- Fixed Cordis webserver route registration lifecycle with `ctx.effect` cleanup to prevent duplicate route collisions during hot-reloads.
+- Fixed Cordis patch YAML sequence format for `- insert:`.
+- Added dual endpoint fallback (`/api/message-history-v2` and `/api/message-history`) for high-availability hot reloading.
+
 ## [1.0.1] - 2026-11-10
 
 ### Added

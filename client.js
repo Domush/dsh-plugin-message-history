@@ -28,11 +28,17 @@ export default function apply(ctx) {
     } catch (e) {}
   }
 
+  let apiEndpoint = '/api/message-history-v2';
+
   // Function to sync history from host
   async function refreshHistory() {
     detectSessionId();
     try {
-      const res = await fetch(`/api/message-history?sessionId=${encodeURIComponent(currentSessionId)}`);
+      let res = await fetch(`${apiEndpoint}?sessionId=${encodeURIComponent(currentSessionId)}`);
+      if (!res.ok && apiEndpoint === '/api/message-history-v2') {
+        apiEndpoint = '/api/message-history';
+        res = await fetch(`${apiEndpoint}?sessionId=${encodeURIComponent(currentSessionId)}`);
+      }
       if (res.ok) {
         const data = await res.json();
         cachedHistory = data.history || [];
@@ -75,7 +81,7 @@ export default function apply(ctx) {
       const text = target.value;
       if (text && text.trim()) {
         detectSessionId();
-        fetch('/api/message-history', {
+        fetch(apiEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text, sessionId: currentSessionId })
