@@ -132,3 +132,35 @@ test('autoImportSessionHistory - reads sessions newest-first and populates histo
   // Clean up
   try { fs.unlinkSync(tmpPath); } catch {}
 });
+
+test('HistoryStore - atomic save and corrupted file recovery', () => {
+  const tmpPath = path.join(os.tmpdir(), `test-corrupt-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+
+  // Write invalid/broken JSON to simulate power cut/corruption
+  fs.writeFileSync(tmpPath, '{"invalid_json": [ incomplete...', 'utf8');
+
+  // Initializing store should recover safely without crashing
+  const store = new HistoryStore(tmpPath);
+  assert.deepStrictEqual(store.history, []);
+
+  // Ensure a corrupted backup was created
+  const files = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(path.basename(tmpPath) + '.corrupted-'));
+  assert.strictEqual(files.length, 1);
+
+  // Clean up backup
+  for (const f of files) {
+    try { fs.unlinkSync(path.join(os.tmpdir(), f)); } catch {}
+  }
+
+  // Adding a message should write atomically
+  store.add('Recovered message', 'test-sess');
+  assert.strictEqual(store.history.length, 1);
+  assert.strictEqual(store.get('test-sess')[0], 'Recovered message');
+
+  // Verify file on disk is valid JSON
+  const content = JSON.parse(fs.readFileSync(tmpPath, 'utf8'));
+  assert.strictEqual(content[0].text, 'Recovered message');
+
+  // Clean up
+  try { fs.unlinkSync(tmpPath); } catch {}
+});

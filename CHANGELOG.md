@@ -2,6 +2,26 @@
 
 All notable changes to `dsh-plugin-message-history` will be documented in this file.
 
+## [1.0.5] - 2026-11-10
+
+### Security
+- **DoS Protection**: Enforced 64 KB payload size cap on HTTP POST endpoints to prevent memory exhaustion and denial of service.
+- **Decompression Bounds**: Implemented memory limits and size ceilings on Zstd multi-frame decompression in session importer to guard against decompression bombs.
+- **File Permissions**: Set restricted file permissions (`0600` for file, `0700` for directory) on history store to protect sensitive prompts.
+- **Safe Directory Traversal**: Bounded session search depth to 3 and excluded symbolic links to prevent infinite traversal loops.
+
+### Fixed
+- **Atomic Persistence**: Switched to write-to-temp and atomic rename in `HistoryStore` to prevent data corruption during abrupt crashes, and added corrupted backup recovery.
+- **Input Scope Isolation**: Restricted composer element lookup in `client.js` to avoid intercepting keydowns on unrelated textareas, search inputs, or modal forms.
+- **Multi-Session State**: Reset navigation state machine when `sessionId` changes, and eliminated global singleton state leak across simultaneous sessions.
+- **Event Listener Duplication**: Added `stopImmediatePropagation` to prevent double-advancing history items when multiple mount points exist.
+- **Rich Editor Safety**: Replaced destructive DOM fallback with safe `InputEvent` dispatching to preserve Lexical virtual DOM trees.
+- **CI/CD Publish Race**: Removed redundant `release` trigger in GitHub Actions workflow to prevent version conflicts when publishing on tag pushes, and enabled `--provenance`.
+
+### Changed
+- **Node Engine Requirement**: Declared `"engines": { "node": ">=22.0.0" }` in `package.json` for native Zstd decompression support.
+- **Service Injections**: Removed unused `sessionPersistence` injection from plugin definition.
+
 ## [1.0.4] - 2026-11-10
 
 ### Fixed

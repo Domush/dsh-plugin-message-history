@@ -1,17 +1,26 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
 import { HistoryStore } from './lib/store.js';
 import { extractUserMessageText, autoImportSessionHistory } from './lib/importer.js';
 
 export const name = 'dsh-plugin-message-history';
-export const inject = ['webServer', 'connection', 'sessionPersistence'];
+export const inject = ['webServer', 'connection'];
+
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB cap against DoS
 
 export function apply(ctx) {
   const store = new HistoryStore();
+  let inFlightImport = null;
+
+  const triggerImport = () => {
+    if (!inFlightImport) {
+      inFlightImport = autoImportSessionHistory(ctx, store).finally(() => {
+        inFlightImport = null;
+      });
+    }
+    return inFlightImport;
+  };
 
   // Best-effort initial auto-import of past messages
-  autoImportSessionHistory(ctx, store).catch(() => {});
+  triggerImport().catch(() => {});
 
   // Listen to live session events to continuously keep history populated across sessions
   ctx.on('session/event', (session, event) => {
@@ -32,6 +41,7 @@ export function apply(ctx) {
       const rejection = ctx.connection.requestRejection(req);
       if (rejection) {
         res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: rejection }));
         return;
       }
@@ -42,7 +52,7 @@ export function apply(ctx) {
 
     // Manual re-import endpoint
     if ((url.pathname.endsWith('/import')) && req.method === 'POST') {
-      const imported = await autoImportSessionHistory(ctx, store);
+      const imported = await triggerImport();
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ ok: true, imported, total: store.history.length }));
       return;
@@ -57,20 +67,43 @@ export function apply(ctx) {
 
     if (req.method === 'POST') {
       let body = '';
+      let receivedBytes = 0;
+      let aborted = false;
+
       req.on('data', chunk => {
+        if (aborted) return;
+        receivedBytes += chunk.length;
+        if (receivedBytes > MAX_BODY_BYTES) {
+          aborted = true;
+          res.statusCode = 413;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Payload too large' }));
+          req.destroy();
+          return;
+        }
         body += chunk;
       });
 
+      req.on('error', () => {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Request stream error' }));
+        }
+      });
+
       req.on('end', () => {
+        if (aborted) return;
         try {
           const data = JSON.parse(body);
-          if (data.message) {
-            store.add(data.message, data.sessionId || sessionId || 'global');
+          if (data && typeof data.message === 'string' && data.message.trim()) {
+            store.add(data.message, (typeof data.sessionId === 'string' ? data.sessionId : sessionId) || 'global');
           }
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: true }));
         } catch (e) {
           res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
         }
       });
@@ -78,6 +111,7 @@ export function apply(ctx) {
     }
 
     res.statusCode = 405;
+    res.setHeader('Content-Type', 'text/plain');
     res.end('Method Not Allowed');
   };
 
@@ -109,3 +143,4 @@ export function apply(ctx) {
     });
   }
 }
+

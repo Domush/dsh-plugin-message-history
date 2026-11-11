@@ -1,8 +1,6 @@
 name: Publish to NPM
 
 on:
-  release:
-    types: [published]
   push:
     tags:
       - 'v*'
@@ -28,6 +26,6 @@ jobs:
         run: npm test
 
       - name: Publish to NPM
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NODE_AUTH_TOKEN }}

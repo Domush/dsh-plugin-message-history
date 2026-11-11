@@ -74,16 +74,19 @@ window.__ModuleLoader__.load({
       if (!target) return null;
       if (target.getAttribute && target.getAttribute("data-composer-input") === "true") return target;
       if (target.closest) {
-        const found = target.closest('[data-composer-input="true"]') ||
-                      target.closest('[role="textbox"][contenteditable="true"]');
-        if (found) return found;
-        const card = target.closest('[data-composer-card]');
+        const explicit = target.closest('[data-composer-input="true"]');
+        if (explicit) return explicit;
+        const card = target.closest('[data-composer-card]') ||
+                     target.closest('[data-slot-owner="conversation.input"]') ||
+                     target.closest('.dsh-composer');
         if (card) {
-          const inner = card.querySelector('[data-composer-input="true"]');
+          const inner = card.querySelector('[data-composer-input="true"]') ||
+                        card.querySelector('[role="textbox"][contenteditable="true"]') ||
+                        card.querySelector('textarea');
           if (inner) return inner;
+          if (target.isContentEditable || target.tagName === "TEXTAREA") return target;
         }
       }
-      if (target.isContentEditable || target.tagName === "TEXTAREA") return target;
       return null;
     }
 
@@ -108,18 +111,36 @@ window.__ModuleLoader__.load({
       // 3. Contenteditable Lexical DOM fallback via document.execCommand
       try {
         el.focus();
-        document.execCommand("selectAll", false, null);
-        document.execCommand("insertText", false, text);
-      } catch (err) {
-        el.textContent = text;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }
+        if (typeof document.queryCommandSupported === "function" && document.queryCommandSupported("insertText")) {
+          document.execCommand("selectAll", false, null);
+          document.execCommand("insertText", false, text);
+          return;
+        }
+      } catch (err) {}
+
+      // 4. Safe InputEvent dispatch without wiping virtual DOM nodes
+      try {
+        el.focus();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          const evt = new InputEvent("beforeinput", {
+            inputType: "insertText",
+            data: text,
+            bubbles: true,
+            cancelable: true
+          });
+          el.dispatchEvent(evt);
+        }
+      } catch (err) {}
     }
 
-    let activeSessionProps = null;
-
     function MessageHistoryMount(props) {
-      activeSessionProps = props;
+      const propsRef = useRef(props);
+      propsRef.current = props;
 
       const [history, setHistory] = useState([]);
       const stateRef = useRef({
@@ -134,14 +155,23 @@ window.__ModuleLoader__.load({
         stateRef.current.history = history;
       }, [history]);
 
+      // Reset navigation state when switching sessions
+      useEffect(() => {
+        const st = stateRef.current;
+        st.state = STATE.IDLE;
+        st.historyIndex = -1;
+        st.draft = "";
+        st.isModified = false;
+      }, [props.sessionId]);
+
       useEffect(() => {
         let active = true;
         async function fetchHistory() {
           try {
-            let res = await fetch("/api/message-history-v2");
-            if (!res.ok) {
-              res = await fetch("/api/message-history");
-            }
+            const url = props.sessionId
+              ? `/api/message-history?sessionId=${encodeURIComponent(props.sessionId)}`
+              : "/api/message-history";
+            const res = await fetch(url);
             if (res.ok && active) {
               const data = await res.json();
               const items = Array.isArray(data.history) ? data.history : [];
@@ -172,12 +202,19 @@ window.__ModuleLoader__.load({
           if (!hist || hist.length === 0) return;
 
           const key = e.key;
-          const currentProps = activeSessionProps || props;
+          const currentProps = propsRef.current || props;
+
+          const handleAction = () => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof e.stopImmediatePropagation === "function") {
+              e.stopImmediatePropagation();
+            }
+          };
 
           if (key === "Escape") {
             if (st.state === STATE.NAVIGATING) {
-              e.preventDefault();
-              e.stopPropagation();
+              handleAction();
               st.state = STATE.IDLE;
               const restored = st.draft;
               st.draft = "";
@@ -194,8 +231,7 @@ window.__ModuleLoader__.load({
             if (st.state === STATE.IDLE) {
               // Empty message box: immediate single-press trigger
               if (!currentText.trim()) {
-                e.preventDefault();
-                e.stopPropagation();
+                handleAction();
                 st.state = STATE.NAVIGATING;
                 st.draft = currentText;
                 st.historyIndex = 0;
@@ -206,8 +242,7 @@ window.__ModuleLoader__.load({
 
               // Text entered: only trigger when cursor is at position 0
               if (isCaretAtStart(composerEl)) {
-                e.preventDefault();
-                e.stopPropagation();
+                handleAction();
                 st.state = STATE.NAVIGATING;
                 st.draft = currentText;
                 st.historyIndex = 0;
@@ -228,15 +263,13 @@ window.__ModuleLoader__.load({
               // If modified, only navigate when cursor is at position 0
               if (isUnmodified || isCaretAtStart(composerEl)) {
                 if (st.historyIndex < hist.length - 1) {
-                  e.preventDefault();
-                  e.stopPropagation();
+                  handleAction();
                   st.historyIndex++;
                   st.isModified = false;
                   setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
                 } else {
                   // Reached oldest history item
-                  e.preventDefault();
-                  e.stopPropagation();
+                  handleAction();
                 }
                 return;
               }
@@ -255,8 +288,7 @@ window.__ModuleLoader__.load({
               // If unmodified, single press immediately changes to newer history item or draft
               // If modified, only navigate when cursor is at very last position
               if (isUnmodified || isCaretAtEnd(composerEl)) {
-                e.preventDefault();
-                e.stopPropagation();
+                handleAction();
 
                 if (st.historyIndex > 0) {
                   st.historyIndex--;
@@ -293,7 +325,7 @@ window.__ModuleLoader__.load({
           window.removeEventListener("input", onInput, true);
           window.removeEventListener("keydown", onKeyDown, true);
         };
-      }, [props]);
+      }, []);
 
       return null;
     }
