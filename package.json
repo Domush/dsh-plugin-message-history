@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-message-history",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Native DSH plugin for persistent message history navigation via arrow keys",
   "type": "module",
   "scripts": {
