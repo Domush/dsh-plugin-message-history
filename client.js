@@ -10,8 +10,6 @@ window.__ModuleLoader__.load({
       NAVIGATING: "NAVIGATING"
     };
 
-    const DOUBLE_PRESS_TIMEOUT_MS = 1500;
-
     function getHistoryItemText(item) {
       if (!item) return "";
       return typeof item === "string" ? item : (item.text || "");
@@ -123,11 +121,7 @@ window.__ModuleLoader__.load({
         state: STATE.IDLE,
         historyIndex: -1,
         draft: "",
-        history: [],
-        upPressCount: 0,
-        lastUpPressTime: 0,
-        downPressCount: 0,
-        lastDownPressTime: 0
+        history: []
       });
 
       useEffect(() => {
@@ -166,8 +160,6 @@ window.__ModuleLoader__.load({
           const currentProps = activeSessionProps || props;
 
           if (key === "Escape") {
-            st.upPressCount = 0;
-            st.downPressCount = 0;
             if (st.state === STATE.NAVIGATING) {
               e.preventDefault();
               e.stopPropagation();
@@ -181,71 +173,69 @@ window.__ModuleLoader__.load({
           }
 
           if (key === "ArrowUp") {
-            st.downPressCount = 0;
             const currentText = getElementText(composerEl);
 
-            // Empty message box: immediate trigger on single press
-            if (!currentText.trim()) {
-              e.preventDefault();
-              e.stopPropagation();
-              st.upPressCount = 0;
-              st.state = STATE.NAVIGATING;
-              st.draft = currentText;
-              st.historyIndex = 0;
-              setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
-              return;
-            }
-
-            // Text is present: MUST be at position 0
-            if (!isCaretAtStart(composerEl)) {
-              st.upPressCount = 0;
-              // Allow default browser/Lexical behavior (scroll up or jump to position 0)
-              return;
-            }
-
-            // Cursor is at position 0: require double-press within threshold
-            const now = Date.now();
-            if (st.upPressCount >= 1 && (now - st.lastUpPressTime) < DOUBLE_PRESS_TIMEOUT_MS) {
-              st.upPressCount = 0;
-              e.preventDefault();
-              e.stopPropagation();
-
-              if (st.state === STATE.IDLE) {
+            if (st.state === STATE.IDLE) {
+              // Empty message box: immediate single-press trigger
+              if (!currentText.trim()) {
+                e.preventDefault();
+                e.stopPropagation();
                 st.state = STATE.NAVIGATING;
                 st.draft = currentText;
                 st.historyIndex = 0;
                 setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
-              } else if (st.state === STATE.NAVIGATING) {
-                if (st.historyIndex < hist.length - 1) {
-                  st.historyIndex++;
-                  setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
-                }
-              }
-            } else {
-              // First press at position 0
-              st.upPressCount = 1;
-              st.lastUpPressTime = now;
-              // Do NOT preventDefault, let default action occur
-              return;
-            }
-            return;
-          }
-
-          if (key === "ArrowDown") {
-            st.upPressCount = 0;
-
-            if (st.state === STATE.NAVIGATING) {
-              // Must be at the very last position
-              if (!isCaretAtEnd(composerEl)) {
-                st.downPressCount = 0;
-                // Allow default browser/Lexical behavior (scroll down towards end)
                 return;
               }
 
-              // Cursor is at very last position: require double-press
-              const now = Date.now();
-              if (st.downPressCount >= 1 && (now - st.lastDownPressTime) < DOUBLE_PRESS_TIMEOUT_MS) {
-                st.downPressCount = 0;
+              // Text entered: only trigger when cursor is at position 0
+              if (isCaretAtStart(composerEl)) {
+                e.preventDefault();
+                e.stopPropagation();
+                st.state = STATE.NAVIGATING;
+                st.draft = currentText;
+                st.historyIndex = 0;
+                setComposerText(currentProps, composerEl, getHistoryItemText(hist[0]));
+                return;
+              }
+
+              // Cursor not at position 0: allow default behavior (scroll up / jump to 0)
+              return;
+            }
+
+            if (st.state === STATE.NAVIGATING) {
+              const expectedText = getHistoryItemText(hist[st.historyIndex]);
+              const isUnmodified = (currentText === expectedText);
+
+              // If unmodified, single press immediately changes to older history item
+              // If modified, only navigate when cursor is at position 0
+              if (isUnmodified || isCaretAtStart(composerEl)) {
+                if (st.historyIndex < hist.length - 1) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  st.historyIndex++;
+                  setComposerText(currentProps, composerEl, getHistoryItemText(hist[st.historyIndex]));
+                } else {
+                  // Reached oldest history item
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+                return;
+              }
+
+              // Modified and not at position 0: allow default scrolling
+              return;
+            }
+          }
+
+          if (key === "ArrowDown") {
+            if (st.state === STATE.NAVIGATING) {
+              const currentText = getElementText(composerEl);
+              const expectedText = getHistoryItemText(hist[st.historyIndex]);
+              const isUnmodified = (currentText === expectedText);
+
+              // If unmodified, single press immediately changes to newer history item or draft
+              // If modified, only navigate when cursor is at very last position
+              if (isUnmodified || isCaretAtEnd(composerEl)) {
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -260,29 +250,12 @@ window.__ModuleLoader__.load({
                   st.draft = "";
                   setComposerText(currentProps, composerEl, restored);
                 }
-              } else {
-                // First press at very last position
-                st.downPressCount = 1;
-                st.lastDownPressTime = now;
                 return;
               }
-            } else {
-              st.downPressCount = 0;
+
+              // Modified and not at end: allow default scrolling
+              return;
             }
-            return;
-          }
-
-          // Reset double-press counters on any other key
-          if (key !== "ArrowUp" && key !== "ArrowDown") {
-            st.upPressCount = 0;
-            st.downPressCount = 0;
-          }
-
-          // User typing or modifying text cancels navigation mode
-          if (st.state === STATE.NAVIGATING && key !== "Shift" && key !== "Control" && key !== "Alt" && key !== "Meta" && key !== "ArrowLeft" && key !== "ArrowRight") {
-            st.state = STATE.IDLE;
-            st.historyIndex = -1;
-            st.draft = "";
           }
         }
 
