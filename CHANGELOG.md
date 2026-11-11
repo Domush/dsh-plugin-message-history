@@ -2,6 +2,14 @@
 
 All notable changes to `dsh-plugin-message-history` will be documented in this file.
 
+## [1.0.1] - 2026-11-10
+
+### Added
+- Auto-importing of message history from the current and previous sessions upon plugin activation (up to 100 messages) using DSH `sessionQuery` / `sessionPersistence`.
+- Real-time `session/event` listener on the host to continuously populate the history buffer as messages are sent.
+- React-compatible synthetic value setter (`setNativeValue`) in client textarea interception.
+- Manual re-import endpoint (`POST /api/message-history/import`).
+
 ## [1.0.0] - 2026-11-10
 
 ### Added

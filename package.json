@@ -1,8 +1,11 @@
 {
   "name": "dsh-plugin-message-history",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Native DSH plugin for persistent message history navigation via arrow keys",
   "type": "module",
+  "scripts": {
+    "test": "node --test tests/test_navigator.js tests/test_importer.js"
+  },
   "license": "MIT",
   "author": "Domush",
   "repository": {
