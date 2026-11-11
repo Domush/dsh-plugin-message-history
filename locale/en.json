@@ -1,7 +1,6 @@
 {
   "meta": {
-    "language": "en"
-  },
-  "title": "Message History",
-  "description": "Native persistent message history navigation via arrow keys."
+    "title": "Message History",
+    "description": "Native persistent message history navigation via arrow keys."
+  }
 }
