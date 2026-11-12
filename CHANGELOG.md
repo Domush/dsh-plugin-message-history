@@ -2,6 +2,11 @@
 
 All notable changes to `dsh-plugin-message-history` will be documented in this file.
 
+## [1.0.6] - 2026-11-12
+
+### Fixed
+- **Session Context Resolution**: Fixed bug where message history failed to update across sessions due to missing `sessionId` propagation; added fallback to global `window.__DSH_SESSION_ID__`.
+
 ## [1.0.5] - 2026-11-10
 
 ### Security

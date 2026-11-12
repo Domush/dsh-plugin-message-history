@@ -139,6 +139,7 @@ window.__ModuleLoader__.load({
     }
 
     function MessageHistoryMount(props) {
+      const sessionId = props.sessionId || window.__DSH_SESSION_ID__;
       const propsRef = useRef(props);
       propsRef.current = props;
 
@@ -162,14 +163,14 @@ window.__ModuleLoader__.load({
         st.historyIndex = -1;
         st.draft = "";
         st.isModified = false;
-      }, [props.sessionId]);
+      }, [sessionId]);
 
       useEffect(() => {
         let active = true;
         async function fetchHistory() {
           try {
-            const url = props.sessionId
-              ? `/api/message-history?sessionId=${encodeURIComponent(props.sessionId)}`
+            const url = sessionId
+              ? `/api/message-history?sessionId=${encodeURIComponent(sessionId)}`
               : "/api/message-history";
             const res = await fetch(url);
             if (res.ok && active) {
@@ -181,7 +182,7 @@ window.__ModuleLoader__.load({
         }
         fetchHistory();
         return () => { active = false; };
-      }, [props.sessionId]);
+      }, [sessionId]);
 
       useEffect(() => {
         function onInput(e) {
